@@ -46,7 +46,7 @@ namespace ReadCodeParameters
                 string res = AnalyzeFilesInDirectorySafeThreadCheck(directoryPath, fileType);
                 res = res.Replace("\r\n", "\n");
                 string[] data = res.Split('\n');
-
+                FileStreamOptions fileStreamOptions = new FileStreamOptions();
                 using (StreamWriter streamWriter = new StreamWriter(outputFile))
                 {
                     streamWriter.WriteLine("fileName,className,variables,lineNumber,dataType");
