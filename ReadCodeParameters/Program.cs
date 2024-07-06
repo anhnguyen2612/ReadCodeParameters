@@ -22,7 +22,7 @@ namespace ReadCodeParameters
                 return;
             }
 
-            if (args.Length < 2)
+            if (args.Length < 3)
             {
                 Console.WriteLine("Error: Missing required arguments.");
                 ShowInstructions();
@@ -31,10 +31,11 @@ namespace ReadCodeParameters
 
             string directoryPath = args[0];
             string outputFile = args[1];
+            string fileType = args.Length > 2 ? args[2] : "*.cs";
 
-            if (string.IsNullOrEmpty(directoryPath) || string.IsNullOrEmpty(outputFile))
+            if (string.IsNullOrEmpty(directoryPath) || string.IsNullOrEmpty(outputFile) || string.IsNullOrEmpty(fileType))
             {
-                Console.WriteLine("Error: Input path and output file must not be empty.");
+                Console.WriteLine("Error: Input path, output file, and file type must not be empty.");
                 ShowInstructions();
                 return;
             }
@@ -42,7 +43,7 @@ namespace ReadCodeParameters
 
             try
             {
-                string res = AnalyzeFilesInDirectorySafeThreadCheck(directoryPath);
+                string res = AnalyzeFilesInDirectorySafeThreadCheck(directoryPath, fileType);
                 res = res.Replace("\r\n", "\n");
                 string[] data = res.Split('\n');
 
@@ -69,19 +70,18 @@ namespace ReadCodeParameters
             {
                 Console.WriteLine("Error: An I/O error occurred. " + e.Message);
             }
-
-            Console.ReadLine();
         }
 
         #region [proccess arguments function]
         static void ShowInstructions()
         {
             Console.WriteLine("Usage:");
-            Console.WriteLine("  Program <input path> <output file>");
+            Console.WriteLine("  Program <input path> <output file> <file type>");
             Console.WriteLine();
             Console.WriteLine("Arguments:");
             Console.WriteLine("  <input path>   The path to the input directory.");
             Console.WriteLine("  <output file>  The path to the output CSV file.");
+            Console.WriteLine("  <file type>    The file type to search for (e.g., \"*.cs\", \"*.py\").");
             Console.WriteLine();
             Console.WriteLine("Options:");
             Console.WriteLine("  -h             Show this help message.");
@@ -95,12 +95,12 @@ namespace ReadCodeParameters
         }
         #endregion
         #region [function]
-        static string AnalyzeFilesInDirectorySafeThreadCheck(string directoryPath)
+        static string AnalyzeFilesInDirectorySafeThreadCheck(string directoryPath, string fileType)
         {
             StringBuilder res = new StringBuilder();
-            string[] allFiles = Directory.GetFiles(directoryPath, "*.cs", SearchOption.AllDirectories);
+            string[] allFiles = Directory.GetFiles(directoryPath, fileType, SearchOption.AllDirectories);
 
-            string pattern = @"^(?!.*\b(bin|obj|Designer|Generated|AssemblyInfo|TemporaryGeneratedFile|App|Xaml)\b).*\.cs$";
+            string pattern = @"^(?!.*\b(site-packages|bin|obj|Designer|Generated|AssemblyInfo|TemporaryGeneratedFile|App|Xaml)\b).*" + Regex.Escape(fileType.Replace("*", ""));
             Regex regex = new Regex(pattern, RegexOptions.IgnoreCase);
             foreach (string filePath in allFiles)
             {
@@ -233,7 +233,7 @@ namespace ReadCodeParameters
 
             return res.ToString();
         }
-#endregion
+        #endregion
         #region [old function]
         //static string AnalyzeFilesInDirectory(string directoryPath)
         //{
