@@ -2,7 +2,9 @@
 using Microsoft.CodeAnalysis.CSharp;
 using Microsoft.CodeAnalysis.CSharp.Syntax;
 using System;
+using System.Collections;
 using System.Collections.Generic;
+using System.Configuration;
 using System.IO;
 using System.Linq;
 using System.Text;
@@ -15,14 +17,20 @@ namespace ReadCodeParameters
     {
         static void Main(string[] args)
         {
+            if (args.Length == 0)
+            {
+                RunMethod(ConfigurationManager.AppSettings["inputDirectory"], ConfigurationManager.AppSettings["outputFile"], ConfigurationManager.AppSettings["FileType"]);
+                return;
+            }
             #region [proccess arguments]
-            if (args.Length == 0 || args[0] == "-h")
+
+            if (args[0] == "-h")
             {
                 ShowInstructions();
                 return;
             }
 
-            if (args.Length < 3)
+            if (args.Length < 2)
             {
                 Console.WriteLine("Error: Missing required arguments.");
                 ShowInstructions();
@@ -41,6 +49,11 @@ namespace ReadCodeParameters
             }
             #endregion
 
+            RunMethod(directoryPath, outputFile, fileType);
+        }
+
+        private static void RunMethod(string directoryPath, string outputFile, string fileType)
+        {
             try
             {
                 string res = AnalyzeFilesInDirectorySafeThreadCheck(directoryPath, fileType);
@@ -81,7 +94,7 @@ namespace ReadCodeParameters
             Console.WriteLine("Arguments:");
             Console.WriteLine("  <input path>   The path to the input directory.");
             Console.WriteLine("  <output file>  The path to the output CSV file.");
-            Console.WriteLine("  <file type>    The file type to search for (e.g., \"*.cs\", \"*.py\").");
+            Console.WriteLine("  <file type>    The file type to search for (e.g., \"*.cs\").");
             Console.WriteLine();
             Console.WriteLine("Options:");
             Console.WriteLine("  -h             Show this help message.");
@@ -98,27 +111,38 @@ namespace ReadCodeParameters
         static string AnalyzeFilesInDirectorySafeThreadCheck(string directoryPath, string fileType)
         {
             StringBuilder res = new StringBuilder();
-            string[] allFiles = Directory.GetFiles(directoryPath, fileType, SearchOption.AllDirectories);
+            string[] preprocessorSymbols = ConfigurationManager.AppSettings["PreprocessorSymbols"].Split(';');
+            string[] allFiles = new string[1];
+            // get the file attributes for file or directory
+            FileAttributes attr = File.GetAttributes(directoryPath);
+            if ((attr & FileAttributes.Directory) == FileAttributes.Directory)
+                allFiles = Directory.GetFiles(directoryPath, fileType, SearchOption.AllDirectories);
+            else
+                allFiles[0] = new FileInfo(directoryPath).FullName;
 
             string pattern = @"^(?!.*\b(site-packages|bin|obj|Designer|Generated|AssemblyInfo|TemporaryGeneratedFile|App|Xaml)\b).*" + Regex.Escape(fileType.Replace("*", ""));
             Regex regex = new Regex(pattern, RegexOptions.IgnoreCase);
+
+            //read files
             foreach (string filePath in allFiles)
             {
                 if (regex.IsMatch(filePath))
                 {
-                    var code = File.ReadAllText(filePath);
-                    var tree = CSharpSyntaxTree.ParseText(code);
+                    string code = File.ReadAllText(filePath);
+                    var parseOptions = new CSharpParseOptions().WithPreprocessorSymbols(preprocessorSymbols);
+                    var tree = CSharpSyntaxTree.ParseText(code, parseOptions);
                     var root = tree.GetRoot();
                     var classes = root.DescendantNodes().OfType<ClassDeclarationSyntax>();
 
-                    var compilation = CSharpCompilation.Create("MyCompilation")
+                    CSharpCompilation compilation = CSharpCompilation.Create("MyCompilation")
                         .AddReferences(MetadataReference.CreateFromFile(typeof(object).Assembly.Location))
                         .AddSyntaxTrees(tree);
+                    
                     var model = compilation.GetSemanticModel(tree);
 
                     foreach (var classDeclaration in classes)
                     {
-                        var className = classDeclaration.Identifier.Text;
+                        string className = classDeclaration.Identifier.Text;
 
                         // Get all field declarations
                         var fieldDeclarations = classDeclaration.Members.OfType<FieldDeclarationSyntax>();
