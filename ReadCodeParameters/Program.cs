@@ -9,7 +9,6 @@ using System.IO;
 using System.Linq;
 using System.Text;
 using System.Text.RegularExpressions;
-using System.Threading.Tasks;
 
 namespace ReadCodeParameters
 {
@@ -22,7 +21,7 @@ namespace ReadCodeParameters
                 RunMethod(ConfigurationManager.AppSettings["inputDirectory"], ConfigurationManager.AppSettings["outputFile"], ConfigurationManager.AppSettings["FileType"]);
                 return;
             }
-            #region [proccess arguments]
+#region [proccess arguments]
 
             if (args[0] == "-h")
             {
@@ -47,7 +46,7 @@ namespace ReadCodeParameters
                 ShowInstructions();
                 return;
             }
-            #endregion
+#endregion
 
             RunMethod(directoryPath, outputFile, fileType);
         }
@@ -120,7 +119,7 @@ namespace ReadCodeParameters
             else
                 allFiles[0] = new FileInfo(directoryPath).FullName;
 
-            string pattern = @"^(?!.*\b(site-packages|bin|obj|Designer|Generated|AssemblyInfo|TemporaryGeneratedFile|App|Xaml)\b).*" + Regex.Escape(fileType.Replace("*", ""));
+            string pattern = @"^(?!.*\b(site-packages|bin|obj|Designer|Generated|AssemblyInfo|TemporaryGeneratedFile|App|Xaml$|.g.)\b).*" + Regex.Escape(fileType.Replace("*", ""));
             Regex regex = new Regex(pattern, RegexOptions.IgnoreCase);
 
             //read files
