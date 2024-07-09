@@ -7,6 +7,7 @@ using System.Collections.Generic;
 using System.Configuration;
 using System.IO;
 using System.Linq;
+using System.Reflection;
 using System.Text;
 using System.Text.RegularExpressions;
 
@@ -61,7 +62,7 @@ namespace ReadCodeParameters
                 FileStreamOptions fileStreamOptions = new FileStreamOptions();
                 using (StreamWriter streamWriter = new StreamWriter(outputFile))
                 {
-                    streamWriter.WriteLine("fileName,className,variables,lineNumber,dataType");
+                    streamWriter.WriteLine("fileName,className,methodName,variables,lineNumber,dataType");
                     foreach (var line in data)
                     {
                         streamWriter.WriteLine(line);
@@ -149,8 +150,7 @@ namespace ReadCodeParameters
                         var propertyDeclarations = classDeclaration.Members.OfType<PropertyDeclarationSyntax>();
                         // Get all local variable declarations
                         var localDeclarations = classDeclaration.DescendantNodes().OfType<LocalDeclarationStatementSyntax>();
-                        var variableDeclarations = classDeclaration.DescendantNodes().OfType<VariableDeclarationSyntax>();
-
+                        var methodDeclarations = classDeclaration.Members.OfType<MethodDeclarationSyntax>();
                         Console.WriteLine($"File: {filePath}, Class: {className}");
 
                         // Process fields
@@ -167,7 +167,7 @@ namespace ReadCodeParameters
                                 string fieldType = isStatic ? "Static Field" : "Field";
                                 bool isThreadSafe = isVolatile || isStatic; // A simple heuristic
                                 Console.WriteLine($"{fieldType} - Line {lineNumber}: {variable.Identifier.Text}, {type}, Thread-Safe: {isThreadSafe}");
-                                res.AppendLine($"{filePath},{className},{variable.Identifier.Text},{lineNumber},{type.Replace(',', '|')},{fieldType},{isThreadSafe}");
+                                res.AppendLine($"{filePath},{className},-,{variable.Identifier.Text},{lineNumber},{type.Replace(',', '|')},{fieldType},{isThreadSafe}");
                             }
                         }
 
@@ -184,7 +184,7 @@ namespace ReadCodeParameters
                                 .Any(a => a.Name.ToString().Contains("ThreadStatic") || a.Name.ToString().Contains("ThreadLocal"));
 
                             Console.WriteLine($"Property - Line {lineNumber}: {property.Identifier.Text}, {type}, Thread-Safe: {isThreadSafe}");
-                            res.AppendLine($"{filePath},{className},{property.Identifier.Text},{lineNumber},{type.Replace(',', '|')},Property,{isThreadSafe}");
+                            res.AppendLine($"{filePath},{className},-,{property.Identifier.Text},{lineNumber},{type.Replace(',', '|')},Property,{isThreadSafe}");
                         }
 
                         // Process local variables
@@ -199,52 +199,57 @@ namespace ReadCodeParameters
                             bool isThreadSafe = false;
 
                             Console.WriteLine($"Local Variable - Line {lineNumber}: {variable.Identifier.Text}, {type}, Thread-Safe: {isThreadSafe}");
-                            res.AppendLine($"{filePath},{className},{variable.Identifier.Text},{lineNumber},{type.Replace(',', '|')},Local Variable,{isThreadSafe}");
+                            res.AppendLine($"{filePath},{className},-,{variable.Identifier.Text},{lineNumber},{type.Replace(',', '|')},Local Variable,{isThreadSafe}");
                         }
 
                         // Process variables
-                        foreach (var variableDeclaration in variableDeclarations)
+                        foreach (var methodDeclaration in methodDeclarations)
                         {
-                            foreach (var variable in variableDeclaration.Variables)
+                            var methodName = methodDeclaration.Identifier.Text;
+                            var variableDeclarations = methodDeclaration.DescendantNodes().OfType<VariableDeclarationSyntax>();
+                            foreach (var variableDeclaration in variableDeclarations)
                             {
-                                var identifier = variable.Identifier.Text;
-                                var typeInfo = model.GetTypeInfo(variableDeclaration.Type);
-                                var type = typeInfo.ConvertedType.ToDisplayString();
-                                var lineNumber = variableDeclaration.GetLocation().GetLineSpan().StartLinePosition.Line + 1;
-
-                                // Determine if it's static or volatile (for fields)
-                                var parentFieldDeclaration = variableDeclaration.Parent as FieldDeclarationSyntax;
-                                bool isStatic = parentFieldDeclaration?.Modifiers.Any(m => m.IsKind(SyntaxKind.StaticKeyword)) ?? false;
-                                bool isVolatile = parentFieldDeclaration?.Modifiers.Any(m => m.IsKind(SyntaxKind.VolatileKeyword)) ?? false;
-
-                                // Determine if the property is thread-safe
-                                var parentPropertyDeclaration = variableDeclaration.Parent as PropertyDeclarationSyntax;
-                                bool isThreadSafe = isVolatile || isStatic || (parentPropertyDeclaration != null &&
-                                    parentPropertyDeclaration.AttributeLists.SelectMany(a => a.Attributes)
-                                    .Any(a => a.Name.ToString().Contains("ThreadStatic") || a.Name.ToString().Contains("ThreadLocal")));
-
-                                string variableType = isStatic ? "Static Field" : (parentFieldDeclaration != null ? "Field" : "Local Variable");
-
-                                // Find references to this variable
-                                var references = root.DescendantNodes()
-                                    .OfType<IdentifierNameSyntax>()
-                                    .Where(id => id.Identifier.Text == identifier)
-                                    .Select(id => new
-                                    {
-                                        LineNumber = id.GetLocation().GetLineSpan().StartLinePosition.Line + 1,
-                                        IsWrite = id.Parent is AssignmentExpressionSyntax assignment && assignment.Left == id
-                                    }).ToList();
-
-                                // Add information about the variable
-                                Console.WriteLine($"{variableType} - Line {lineNumber}: {identifier}, {type}, Thread-Safe: {isThreadSafe}");
-                                res.AppendLine($"{filePath},{className},{identifier},{lineNumber},{type.Replace(',', '|')},{variableType},{isThreadSafe}");
-
-                                // Add information about references
-                                foreach (var reference in references)
+                                foreach (var variable in variableDeclaration.Variables)
                                 {
-                                    string operation = reference.IsWrite ? "Write" : "Read";
-                                    Console.WriteLine($"    {operation} - Line {reference.LineNumber}");
-                                    res.AppendLine($"{filePath},{className},{identifier},{reference.LineNumber},{type.Replace(',', '|')},Reference,{operation}");
+                                    var identifier = variable.Identifier.Text;
+                                    var typeInfo = model.GetTypeInfo(variableDeclaration.Type);
+                                    var type = typeInfo.ConvertedType.ToDisplayString();
+                                    var lineNumber = variableDeclaration.GetLocation().GetLineSpan().StartLinePosition.Line + 1;
+
+                                    // Determine if it's static or volatile (for fields)
+                                    var parentFieldDeclaration = variableDeclaration.Parent as FieldDeclarationSyntax;
+                                    bool isStatic = parentFieldDeclaration?.Modifiers.Any(m => m.IsKind(SyntaxKind.StaticKeyword)) ?? false;
+                                    bool isVolatile = parentFieldDeclaration?.Modifiers.Any(m => m.IsKind(SyntaxKind.VolatileKeyword)) ?? false;
+
+                                    // Determine if the property is thread-safe
+                                    var parentPropertyDeclaration = variableDeclaration.Parent as PropertyDeclarationSyntax;
+                                    bool isThreadSafe = isVolatile || isStatic || (parentPropertyDeclaration != null &&
+                                        parentPropertyDeclaration.AttributeLists.SelectMany(a => a.Attributes)
+                                        .Any(a => a.Name.ToString().Contains("ThreadStatic") || a.Name.ToString().Contains("ThreadLocal")));
+
+                                    string variableType = isStatic ? "Static Field" : (parentFieldDeclaration != null ? "Field" : "Local Variable");
+
+                                    // Find references to this variable
+                                    var references = root.DescendantNodes()
+                                        .OfType<IdentifierNameSyntax>()
+                                        .Where(id => id.Identifier.Text == identifier)
+                                        .Select(id => new
+                                        {
+                                            LineNumber = id.GetLocation().GetLineSpan().StartLinePosition.Line + 1,
+                                            IsWrite = id.Parent is AssignmentExpressionSyntax assignment && assignment.Left == id
+                                        }).ToList();
+
+                                    // Add information about the variable
+                                    Console.WriteLine($"{variableType} - Line {lineNumber}: {identifier}, {type}, Thread-Safe: {isThreadSafe}");
+                                    res.AppendLine($"{filePath},{className},{methodName},{identifier},{lineNumber},{type.Replace(',', '|')},{variableType},{isThreadSafe}");
+
+                                    // Add information about references
+                                    foreach (var reference in references)
+                                    {
+                                        string operation = reference.IsWrite ? "Write" : "Read";
+                                        Console.WriteLine($"    {operation} - Line {reference.LineNumber}");
+                                        res.AppendLine($"{filePath},{className},{methodName},{identifier},{reference.LineNumber},{type.Replace(',', '|')},Reference,{isThreadSafe},{operation}");
+                                    }
                                 }
                             }
                         }
